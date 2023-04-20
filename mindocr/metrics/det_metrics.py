@@ -4,7 +4,7 @@ import numpy as np
 import mindspore as ms
 from mindspore import nn, ms_function
 import mindspore.ops as ops
-from mindspore import  Tensor
+from mindspore import Tensor
 from mindspore.communication import get_group_size
 from shapely.geometry import Polygon
 from sklearn.metrics import recall_score, precision_score, f1_score
@@ -118,8 +118,6 @@ class DetMetric(nn.Metric):
         fn = np.sum((gt_lst == 1) * (det_lst == 0))
         fp = np.sum((gt_lst == 0) * (det_lst == 1))
         return tp, fp, fn
-
-
 
     def eval(self):
         """

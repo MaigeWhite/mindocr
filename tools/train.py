@@ -24,6 +24,7 @@ import mindspore as ms
 from mindspore import nn
 from mindspore.communication import init, get_rank, get_group_size
 from mindspore.train import LossMonitor, TimeMonitor
+from mindspore.train.callback import CheckpointConfig, ModelCheckpoint
 
 from mindocr.optim import create_optimizer, create_group_params  # adopted from mindcv
 from mindocr.scheduler import create_scheduler  # adopted from mindcv
@@ -164,14 +165,18 @@ def main(cfg):
 
     # save args used for training
     # FIXME: some values are popped and not saved.
+    cb_default = [eval_cb]
     if is_main_device:
         with open(os.path.join(cfg.train.ckpt_save_dir, 'args.yaml'), 'w') as f:
             args_text = yaml.safe_dump(cfg.to_dict(), default_flow_style=False, sort_keys=False)
             f.write(args_text)
 
+        ckpt_config = CheckpointConfig(save_checkpoint_steps=num_batches, keep_checkpoint_max=10)
+        cb_default.append(ModelCheckpoint(config=ckpt_config, directory=cfg.train.ckpt_save_dir, prefix='det_r50'))
+
     # training
     model = ms.Model(train_net)
-    model.train(cfg.scheduler.num_epochs, loader_train, callbacks=[eval_cb],
+    model.train(cfg.scheduler.num_epochs, loader_train, callbacks=cb_default,
                 dataset_sink_mode=cfg.train.dataset_sink_mode)
 
 

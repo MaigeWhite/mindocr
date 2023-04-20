@@ -1,9 +1,11 @@
 from typing import List, Union
 import cv2
 import numpy as np
+from shapely.geometry import Polygon
+import random
 from PIL import Image
 from mindspore.dataset.vision import RandomColorAdjust as MSRandomColorAdjust, ToPIL
-
+import sys
 from ...data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 
 __all__ = ['DecodeImage', 'NormalizeImage', 'ToCHWImage', 'PackLoaderInputs', 'ScalePadImage', 'GridResize',
@@ -16,6 +18,7 @@ class DecodeImage:
     img_mode (str): The channel order of the output, 'BGR' and 'RGB'. Default to 'BGR'.
     channel_first (bool): if True, image shpae is CHW. If False, HWC. Default to False
     """
+
     def __init__(self, img_mode='BGR', channel_first=False, to_float32=False, ignore_orientation=False, **kwargs):
         self.img_mode = img_mode
         self.to_float32 = to_float32
@@ -50,6 +53,7 @@ class NormalizeImage:
     input image: by default, np.uint8, [0, 255], HWC format.
     return image: float32 numpy array
     """
+
     def __init__(self, mean: Union[List[float], str] = 'imagenet', std: Union[List[float], str] = 'imagenet',
                  is_hwc=True, bgr_to_rgb=False, rgb_to_bgr=False, **kwargs):
         # By default, imagnet MEAN and STD is in RGB order. inverse if input image is in BGR mode
@@ -111,6 +115,7 @@ class PackLoaderInputs:
         input: data dict
         output: data tuple corresponding to the `output_columns`
     """
+
     def __init__(self, output_columns: List, **kwargs):
         self.output_columns = output_columns
 
@@ -131,6 +136,7 @@ class ScalePadImage:
     Args:
         target_size: [H, W] of the output image.
     """
+
     def __init__(self, target_size: list):
         self._target_size = np.array(target_size)
 
@@ -165,6 +171,7 @@ class GridResize:
     Resize image to make it divisible by a specified factor exactly.
     Resize polygons correspondingly, if provided.
     """
+
     def __init__(self, factor: int = 32):
         self._factor = factor
 
@@ -192,6 +199,7 @@ class RandomScale:
     Args:
         scale_range: (min, max) scale range.
     """
+
     def __init__(self, scale_range: Union[tuple, list]):
         self._range = scale_range
 
@@ -221,24 +229,22 @@ class RandomCropWithBBox:
         min_crop_ratio: minimum size of a crop in respect to an input image size.
         crop_size: target size of the crop (resized and padded, if needed), preserves sides ratio.
     """
+
     def __init__(self, max_tries=10, min_crop_ratio=0.1, crop_size=(640, 640)):
         self._crop_size = crop_size
         self._ratio = min_crop_ratio
         self._max_tries = max_tries
 
     def __call__(self, data):
-        start, end = self._find_crop(data)
+        start, end, is_out_bounds = self._find_crop(data)
         scale = min(self._crop_size / (end - start))
 
         data['image'] = cv2.resize(data['image'][start[0]: end[0], start[1]: end[1]], None, fx=scale, fy=scale)
-        data['image'] = np.pad(data['image'],
-                               (*tuple((0, cs - ds) for cs, ds in zip(self._crop_size, data['image'].shape[:2])), (0, 0)))
-
-        start, end = start[::-1], end[::-1]     # convert to x, y coord
+        start, end = start[::-1], end[::-1]  # convert to x, y coord
         new_polys, new_texts, new_ignores = [], [], []
         for _id in range(len(data['polys'])):
             # if the polygon is within the crop
-            if (data['polys'][_id].max(axis=0) > start).all() and (data['polys'][_id].min(axis=0) < end).all():   # NOQA
+            if (data['polys'][_id].max(axis=0) > start).all() and (data['polys'][_id].min(axis=0) < end).all():  # NOQA
                 new_polys.append((data['polys'][_id] - start) * scale)
                 new_texts.append(data['texts'][_id])
                 new_ignores.append(data['ignore_tags'][_id])
@@ -247,21 +253,65 @@ class RandomCropWithBBox:
         data['texts'] = new_texts
         data['ignore_tags'] = new_ignores
 
+        # 处理越界坐标，求出越界坐标与[0, 0, w, 0, w, h, 0, h]相交点的坐标，新的poly不一定是四边形, 
+        # det_transforms _validate_polys得重新适配
+        if is_out_bounds:
+            data = self.hand_bounds(data)
+        data['image'] = np.pad(data['image'],
+                               (*tuple((0, cs - ds) for cs, ds in zip(self._crop_size, data['image'].shape[:2])),
+                                (0, 0)))
+
+        return data
+
+    @staticmethod
+    def polygon2numpy(polygon):
+        """将polygon对象的位置信息转换成numpy格式的位置信息"""
+        x, y = polygon.exterior.coords.xy
+        points = np.array([[x, y] for x, y in zip(x, y)], dtype=np.float32)[:-1]
+        return points
+
+    def hand_bounds(self, data, thresh_area=8):
+        img = data['image']
+        h, w, _ = img.shape
+        polys = data['polys']
+        dontcare = data['ignore_tags']
+        crop_polys = Polygon(np.array([0, 0, w, 0, w, h, 0, h], dtype=np.float32).reshape((-1, 2)))
+
+        new_polys = list()
+        new_dontcare = list()
+        for poly, tag in zip(polys, dontcare):
+            poly = Polygon(poly)
+            if crop_polys.intersects(poly):
+                inter_poly = crop_polys.intersection(poly)
+                if inter_poly.area >= thresh_area:
+                    inter_poly_numpy = self.polygon2numpy(inter_poly)
+                    new_polys.append(inter_poly_numpy)
+                    new_dontcare.append(tag)
+
+        data['polys'] = np.array(new_polys)
+        data['ignore_tags'] = np.array(new_dontcare)
         return data
 
     def _find_crop(self, data):
         size = np.array(data['image'].shape[:2])
         polys = [poly for poly, ignore in zip(data['polys'], data['ignore_tags']) if not ignore]
+        is_out_bounds = False
 
         if polys:
             # do not crop through polys => find available "empty" coordinates
             h_array, w_array = np.zeros(size[0], dtype=np.int32), np.zeros(size[1], dtype=np.int32)
             for poly in polys:
                 points = np.maximum(np.round(poly).astype(np.int32), 0)
-                w_array[points[:, 0].min(): points[:, 0].max() + 1] = 1
-                h_array[points[:, 1].min(): points[:, 1].max() + 1] = 1
+                x_min, x_max = points[:, 0].min(), points[:, 0].max() + 1
+                y_min, y_max = points[:, 1].min(), points[:, 1].max() + 1
+                w_array[x_min: x_max] = 1
+                h_array[y_min: y_max] = 1
 
-            if not h_array.all() and not w_array.all():     # if texts do not occupy full image
+                if x_min < 0 or y_min < 0 or x_max > size[1] or y_max > size[0]:
+                    is_out_bounds = True
+                    return np.array([0, 0]), size, is_out_bounds
+
+            if not h_array.all() and not w_array.all():  # if texts do not occupy full image
                 # find available coordinates that don't include text
                 h_avail = np.where(h_array == 0)[0]
                 w_avail = np.where(w_array == 0)[0]
@@ -272,16 +322,16 @@ class RandomCropWithBBox:
                     x = np.sort(np.random.choice(w_avail, size=2))
                     start, end = np.array([y[0], x[0]]), np.array([y[1], x[1]])
 
-                    if ((end - start) < min_size).any():    # NOQA
+                    if ((end - start) < min_size).any():  # NOQA
                         continue
 
                     # check that at least one polygon is within the crop
                     for poly in polys:
-                        if (poly.max(axis=0) > start[::-1]).all() and (poly.min(axis=0) < end[::-1]).all():     # NOQA
-                            return start, end
+                        if (poly.max(axis=0) > start[::-1]).all() and (poly.min(axis=0) < end[::-1]).all():  # NOQA
+                            return start, end, is_out_bounds
 
         # failed to generate a crop or all polys are marked as ignored
-        return np.array([0, 0]), size
+        return np.array([0, 0]), size, is_out_bounds
 
 
 class RandomColorAdjust:

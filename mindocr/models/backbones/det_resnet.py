@@ -50,4 +50,10 @@ def det_resnet50(pretrained: bool = True, **kwargs):
         default_cfg = default_cfgs['resnet50']
         load_pretrained(model, default_cfg)
 
+    from mindspore import load_checkpoint, load_param_into_net
+    pretrain_ckpt_path = '/data2/Mai/resnet50-e0733ab8.ckpt'
+    param_dict = load_checkpoint(pretrain_ckpt_path)
+    load_param_into_net(model, param_dict)
+    print('successful load pretrained: ', pretrain_ckpt_path)
+
     return model
