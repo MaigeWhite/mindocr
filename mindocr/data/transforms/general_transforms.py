@@ -1,10 +1,13 @@
 from typing import List, Union
 import cv2
 import numpy as np
+from shapely.geometry import Polygon
+import random
 from PIL import Image
 from mindspore.dataset.vision import RandomColorAdjust as MSRandomColorAdjust, ToPIL
-
+import sys
 from ...data.constants import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
+
 
 __all__ = ['DecodeImage', 'NormalizeImage', 'ToCHWImage', 'PackLoaderInputs', 'ScalePadImage', 'GridResize',
            'RandomScale', 'RandomCropWithBBox', 'RandomColorAdjust']
@@ -227,9 +230,12 @@ class RandomCropWithBBox:
         self._max_tries = max_tries
 
     def __call__(self, data):
-        start, end = self._find_crop(data)
-        scale = min(self._crop_size / (end - start))
+        start, end, is_out_bounds = self._find_crop(data)
+        # 处理越界坐标，求出越界坐标与[0, 0, w, 0, w, h, 0, h]相交点的坐标，新的poly不一定是四边形, det_transforms _validate_polys得重新适配
+        if is_out_bounds:
+            data = self.hand_bounds(data)
 
+        scale = min(self._crop_size / (end - start))
         data['image'] = cv2.resize(data['image'][start[0]: end[0], start[1]: end[1]], None, fx=scale, fy=scale)
         data['image'] = np.pad(data['image'],
                                (*tuple((0, cs - ds) for cs, ds in zip(self._crop_size, data['image'].shape[:2])), (0, 0)))
@@ -249,17 +255,53 @@ class RandomCropWithBBox:
 
         return data
 
+    @staticmethod
+    def polygon2numpy(polygon):
+        """将polygon对象的位置信息转换成numpy格式的位置信息"""
+        x, y = polygon.exterior.coords.xy
+        points = np.array([[x, y] for x, y in zip(x, y)], dtype=np.float32)[:-1]
+        return points
+
+    def hand_bounds(self, data, thresh_area=16):
+        img = data['image']
+        h, w, _ = img.shape
+        polys = data['polys']
+        dontcare = data['ignore_tags']
+        crop_polys = Polygon(np.array([0, 0, w, 0, w, h, 0, h], dtype=np.float32).reshape((-1, 2)))
+
+        new_polys = list()
+        new_dontcare = list()
+        for poly, tag in zip(polys, dontcare):
+            poly = Polygon(poly)
+            if crop_polys.intersects(poly):
+                inter_poly = crop_polys.intersection(poly)
+                if inter_poly.area >= thresh_area:
+                    inter_poly_numpy = self.polygon2numpy(inter_poly)
+                    new_polys.append(inter_poly_numpy)
+                    new_dontcare.append(tag)
+
+        data['polys'] = np.array(new_polys)
+        data['ignore_tags'] = np.array(new_dontcare)
+        return data
+
     def _find_crop(self, data):
         size = np.array(data['image'].shape[:2])
         polys = [poly for poly, ignore in zip(data['polys'], data['ignore_tags']) if not ignore]
+        is_out_bounds = False
 
         if polys:
             # do not crop through polys => find available "empty" coordinates
             h_array, w_array = np.zeros(size[0], dtype=np.int32), np.zeros(size[1], dtype=np.int32)
             for poly in polys:
                 points = np.maximum(np.round(poly).astype(np.int32), 0)
-                w_array[points[:, 0].min(): points[:, 0].max() + 1] = 1
-                h_array[points[:, 1].min(): points[:, 1].max() + 1] = 1
+                x_min, x_max = points[:, 0].min(), points[:, 0].max() + 1
+                y_min, y_max = points[:, 1].min(), points[:, 1].max() + 1
+                w_array[x_min: x_max] = 1
+                h_array[y_min: y_max] = 1
+
+                if x_min < 0 or y_min < 0 or x_max > size[1] or y_max > size[0]:
+                    is_out_bounds = True
+                    return np.array([0, 0]), size, is_out_bounds
 
             if not h_array.all() and not w_array.all():     # if texts do not occupy full image
                 # find available coordinates that don't include text
@@ -278,10 +320,10 @@ class RandomCropWithBBox:
                     # check that at least one polygon is within the crop
                     for poly in polys:
                         if (poly.max(axis=0) > start[::-1]).all() and (poly.min(axis=0) < end[::-1]).all():     # NOQA
-                            return start, end
+                            return start, end, is_out_bounds
 
         # failed to generate a crop or all polys are marked as ignored
-        return np.array([0, 0]), size
+        return np.array([0, 0]), size, is_out_bounds
 
 
 class RandomColorAdjust:

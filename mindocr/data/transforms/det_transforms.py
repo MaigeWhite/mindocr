@@ -146,7 +146,6 @@ class BorderMap:
         return result
 
 
-
 class ShrinkBinaryMap:
     """
     Making binary mask from detection data with ICDAR format.
@@ -188,7 +187,7 @@ class ShrinkBinaryMap:
 
     @staticmethod
     def _validate_polys(data):
-        data['polys'] = np.clip(data['polys'], 0, np.array(data['image'].shape[1::-1]) - 1)  # shape reverse order: w, h
+        # data['polys'] = np.clip(data['polys'], 0, np.array(data['image'].shape[1::-1]) - 1)  # shape reverse order: w, h
 
         for i in range(len(data['polys'])):
             poly = Polygon(data['polys'][i])
