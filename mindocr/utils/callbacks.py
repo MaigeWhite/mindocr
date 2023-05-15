@@ -105,7 +105,7 @@ class Evaluator:
                 gt = data[1:]
 
             net_preds = self.net(*inputs)
-
+            # print('net_preds: ', net_preds, flush=True)
             if self.pred_cast_fp32:
                 if isinstance(net_preds, ms.Tensor):
                     net_preds = F.cast(net_preds, mstype.float32)

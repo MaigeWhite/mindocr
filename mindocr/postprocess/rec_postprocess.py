@@ -71,6 +71,7 @@ class RecCTCLabelDecode(object):
         self.character = {idx:c for idx, c in enumerate(char_list)}
 
         self.num_classes = len(self.character)
+        print('post character: ', self.character, '  post num_classes: ', self.num_classes, flush=True)
 
     def decode(self, char_indices, prob=None, remove_duplicate=False):
         '''
@@ -85,6 +86,7 @@ class RecCTCLabelDecode(object):
         texts = []
         confs = []
         batch_size = len(char_indices)
+
         for batch_idx in range(batch_size):
             selection = np.ones(len(char_indices[batch_idx]), dtype=bool)
             if remove_duplicate:
@@ -111,7 +113,6 @@ class RecCTCLabelDecode(object):
             confs.append(np.mean(conf_list))
         return texts, confs
 
-
     def __call__(self, preds: Union[Tensor, np.ndarray], labels = None, **kwargs):
         '''
         Args:
@@ -130,7 +131,7 @@ class RecCTCLabelDecode(object):
         #preds = preds.transpose([1, 0, 2]) # [W, BS, C] -> [BS, W, C]. already did in model head.
         pred_indices = preds.argmax(axis=-1)
         pred_prob = preds.max(axis=-1)
-
+        # print('pred_prob: ', pred_prob, flush=True)
         #print('pred indices: ', pred_indices)
         #print('pred prob: ', pred_prob.shape)
 
@@ -265,5 +266,3 @@ if __name__ == '__main__':
     texts = dec(preds)
 
     print(texts)
-
-

@@ -75,6 +75,9 @@ def main(cfg):
         is_train=True,
     )
     num_batches = loader_train.get_dataset_size()
+    # for batch in loader_train.create_dict_iterator():
+    #    print(batch)
+    #    exit(0)
 
     loader_eval = None
     if cfg.system.val_while_train:

@@ -6,11 +6,11 @@ from rapidfuzz.distance import Levenshtein
 from mindspore import nn, ms_function
 import mindspore as ms
 import mindspore.ops as ops
-from mindspore import  Tensor
+from mindspore import Tensor
 from mindspore.communication import get_group_size
 
-
 __all__ = ['RecMetric']
+
 
 class RecMetric(nn.Metric):
     """
@@ -26,13 +26,13 @@ class RecMetric(nn.Metric):
     """
 
     def __init__(self,
-            character_dict_path=None,
-            ignore_space=True,
-            filter_ood=True,
-            lower=True,
-            print_flag=False,
-            device_num=1,
-            **kwargs):
+                 character_dict_path=None,
+                 ignore_space=True,
+                 filter_ood=True,
+                 lower=True,
+                 print_flag=False,
+                 device_num=1,
+                 **kwargs):
         super().__init__()
         self.clear()
         self.ignore_space = ignore_space
@@ -41,12 +41,12 @@ class RecMetric(nn.Metric):
         self.print_flag = print_flag
 
         self.device_num = device_num
-        self.all_reduce = None if device_num==1 else ops.AllReduce()
+        self.all_reduce = None if device_num == 1 else ops.AllReduce()
         self.metric_names = ['acc', 'norm_edit_distance']
 
         # TODO: use parsed dictionary object
         if character_dict_path is None:
-            self.dict  = [c for c in  "0123456789abcdefghijklmnopqrstuvwxyz"]
+            self.dict = [c for c in "0123456789abcdefghijklmnopqrstuvwxyz"]
         else:
             self.dict = []
             with open(character_dict_path, 'r') as f:
@@ -56,7 +56,7 @@ class RecMetric(nn.Metric):
 
     def clear(self):
         self._correct_num = ms.Tensor(0, dtype=ms.int32)
-        self._total_num = ms.Tensor(0, dtype=ms.float32) # avoid int divisor
+        self._total_num = ms.Tensor(0, dtype=ms.float32)  # avoid int divisor
         self._norm_edit_dis = ms.Tensor(0., dtype=ms.float32)
 
     def update(self, *inputs):
@@ -80,14 +80,14 @@ class RecMetric(nn.Metric):
             raise ValueError('Length of inputs should be 2')
         preds, gt = inputs
         pred_texts = preds['texts']
-        #pred_confs = preds['confs']
-        #print('pred: ', pred_texts, len(pred_texts))
+        # pred_confs = preds['confs']
+        # print('pred: ', pred_texts, len(pred_texts))
 
         # remove padded chars in GT
         if isinstance(gt, tuple) or isinstance(gt, list):
-            gt_texts = gt[0] # text string padded
-            gt_lens = gt[1] # text length
-
+            gt_texts = gt[0]  # text string padded
+            gt_lens = gt[1]  # text length
+            # print('gt_texts: ', gt_texts, '  gt_lens: ', gt_lens)
             if isinstance(gt_texts, ms.Tensor):
                 gt_texts = gt_texts.asnumpy()
                 gt_lens = gt_lens.asnumpy()
@@ -98,19 +98,19 @@ class RecMetric(nn.Metric):
             if isinstance(gt_texts, ms.Tensor):
                 gt_texts = gt_texts.asnumpy()
 
-        #print('2: ', gt_texts)
+        # print('2: ', gt_texts)
         for pred, label in zip(pred_texts, gt_texts):
-            #print('pred', pred, 'END')
-            #print('label ', label, 'END')
+            # print('pred', pred, 'END')
+            # print('label ', label, 'END')
 
             if self.ignore_space:
                 pred = pred.replace(' ', '')
                 label = label.replace(' ', '')
 
-            if self.lower: # convert to lower case
+            if self.lower:  # convert to lower case
                 label = label.lower()
 
-            if self.filter_ood: # filter out of dictionary characters
+            if self.filter_ood:  # filter out of dictionary characters
                 label = ''.join([c for c in label if c in self.dict])
 
             if self.print_flag:
@@ -146,9 +146,10 @@ class RecMetric(nn.Metric):
             total_num = self._total_num
 
         sequence_accurancy = float((correct_num / total_num).asnumpy())
-        norm_edit_distance =  float((1 - norm_edit_dis / total_num).asnumpy())
+        norm_edit_distance = float((1 - norm_edit_dis / total_num).asnumpy())
 
         return {'acc': sequence_accurancy, 'norm_edit_distance': norm_edit_distance}
+
 
 if __name__ == '__main__':
     gt = ['ba xla la!    ', 'ba       ']

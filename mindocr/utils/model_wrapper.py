@@ -25,6 +25,7 @@ class NetWithLossWrapper(nn.Cell):
         self.label_indices = label_indices
         self.pred_cast_fp32 = pred_cast_fp32
         self.cast = ops.Cast()
+        self.print = ops.Print()
 
     def construct(self, *args):
         '''
@@ -47,6 +48,8 @@ class NetWithLossWrapper(nn.Cell):
         if self.label_indices is None:
             loss_val = self._loss_fn(pred, *args[1:])
         else:
+            label, label_length = select_inputs_by_indices(args, self.label_indices)
+            # self.print(label.shape, label_length)
             loss_val = self._loss_fn(pred, *select_inputs_by_indices(args, self.label_indices))
 
         return loss_val

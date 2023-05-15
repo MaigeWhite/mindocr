@@ -1,6 +1,6 @@
 system:
   mode: 0 # 0 for graph mode, 1 for pynative mode in MindSpore
-  distribute: True 
+  distribute: False
   amp_level: 'O3'
   seed: 42
   log_interval: 100
@@ -40,7 +40,7 @@ metric:
   main_indicator: acc
   character_dict_path: *character_dict_path
   ignore_space: True
-  print_flag: False
+  print_flag: True
 
 loss:
   name: CTCLoss 
@@ -74,8 +74,8 @@ train:
   dataset_sink_mode: False
   dataset:
     type: LMDBDataset
-    dataset_root: path/to/data_lmdb_release/ # Optional, if set, dataset_root will be used as a prefix for data_dir
-    data_dir: training/
+    dataset_root: D:/data/ocr_dataset/en_dataset # Optional, if set, dataset_root will be used as a prefix for data_dir
+    data_dir: evaluation
     # label_files: # not required when using LMDBDataset
     sample_ratio: 1.0
     shuffle: True
@@ -113,12 +113,12 @@ train:
       num_workers: 8
 
 eval:
-  ckpt_load_path: './tmp_rec/best.ckpt'
+  ckpt_load_path: './tmp_rec_v1/e5.ckpt'
   dataset_sink_mode: False
   dataset:
     type: LMDBDataset
-    dataset_root: path/to/data_lmdb_release/
-    data_dir: validation/
+    dataset_root: D:/data/ocr_dataset/en_dataset
+    data_dir: evaluation
     # label_files: # not required when using LMDBDataset
     sample_ratio: 1.0
     shuffle: False

@@ -1,4 +1,5 @@
 import mindspore as ms
+import mindspore.ops
 from mindspore import Tensor
 from mindspore import nn
 from mindspore.nn.loss.loss import LossBase
@@ -7,7 +8,8 @@ from mindspore.common import dtype as mstype
 from mindspore import ops
 import numpy as np
 
-__all__ = ['CTCLoss']
+mindspore.ops.CTCLossV2
+__all__ = ['CTCLoss', 'CTCLossV2']
 
 # TODO: support label_weights for imbalance data
 class CTCLoss(LossBase):
@@ -47,14 +49,42 @@ class CTCLoss(LossBase):
             loss value (Tensor)
         '''
         logit = pred
-        #T, bs, nc = logit.shape
-        #logit = ops.reshape(logit, (T*bs, nc))
         label_values = ops.reshape(label, (-1,))
-
         loss, _ = self.ctc_loss(logit, self.label_indices, label_values, self.sequence_length)
 
         if self.reduction=='mean':
             loss = loss.mean()
+
+        return loss
+
+
+class CTCLossV2(LossBase):
+    def __init__(self, pred_seq_len=26, max_label_len=25, batch_size=32, reduction='mean'):
+        super().__init__()
+        self.ctc_loss = ops.CTCLossV2(blank=0, zero_infinity=True)
+        self.log_softmax = nn.LogSoftmax(axis=2)
+        self.ones = ops.Ones()
+        self.cast = ops.Cast()
+        self.print = ops.Print()
+        print('use ctclossv2', flush=True)
+
+    def construct(self, logit, label, label_len):
+
+        """
+            logit: (t, n, Class_num)
+            label: (n, max_label_lenth)
+            label_len (n, ) 每个label的实际长度
+        """
+
+        # self.print(logit.shape, label.shape, label_len.shape, label_len)
+        label_len = self.cast(label_len, ms.int32)  # label_len：文本实际长度, 最长为max_text_len
+        logit = self.cast(logit, ms.float32)
+        # logit = self.log_softmax(logit)
+
+        t, bs, _ = logit.shape
+        logit_len = self.ones((bs, ), ms.int32) * t
+        loss, _ = self.ctc_loss(logit, label, logit_len, label_len)
+        loss = ((loss / label_len).sum()) / bs
 
         return loss
 
@@ -73,6 +103,7 @@ class AttentionLoss(LossBase):
         return self.criterion(logits, labels)
 
 
+'''
 if __name__ == '__main__':
     max_text_length = 23
     nc = 26
@@ -86,3 +117,8 @@ if __name__ == '__main__':
 
     loss = loss_fn(x, label)
     print(loss)
+'''
+
+
+if __name__ == '__main__':
+    ctc = CTCLossV2()

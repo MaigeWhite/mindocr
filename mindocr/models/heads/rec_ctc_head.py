@@ -76,7 +76,7 @@ class CTCHead(nn.Cell):
             h = self.dense2(h)
 
         if not self.training:
-            #h = ops.softmax(h, axis=2) # not support on ms 1.8.1
+            # h = ops.softmax(h, axis=2) # not support on ms 1.8.1
             h = ops.Softmax(axis=2)(h)
             h = h.transpose((1, 0, 2))
 

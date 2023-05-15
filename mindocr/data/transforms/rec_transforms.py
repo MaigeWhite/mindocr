@@ -75,7 +75,6 @@ class RecCTCLabelEncode(object):
             self.blank_idx = 0
 
         self.dict = {c:idx for idx, c in enumerate(char_list)}
-
         self.num_classes = len(self.dict)
 
     def __call__(self, data: dict):
@@ -98,10 +97,10 @@ class RecCTCLabelEncode(object):
         data['length'] = np.array(len(char_indices), dtype=np.int32)
         # padding with blank index
         char_indices = char_indices + [self.blank_idx] * (self.max_text_len - len(char_indices))
+
         # TODO: raname to char_indices
         data['text_seq'] = np.array(char_indices, dtype=np.int32)
-        # 
-        data['text_length'] = len(data['label']) 
+        data['text_length'] = len(data['label'])
         data['text_padded'] = data['label'] + ' ' * (self.max_text_len - len(data['label']))
 
         return data
